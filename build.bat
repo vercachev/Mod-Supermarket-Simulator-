@@ -1,9 +1,9 @@
 @echo off
-echo Building Bitburner Save Editor...
+echo Building Cookie Clicker Save Editor...
 pip install -r requirements.txt pyinstaller
-pyinstaller --onefile --windowed --name "BitburnerSaveEditor" ^
+pyinstaller --onefile --windowed --name "CookieClickerSaveEditor" ^
   --icon=assets/icon.ico ^
   --add-data "assets;assets" ^
   main.py
-echo Done! Check dist/ folder.
+echo Done! Check dist/
 pause

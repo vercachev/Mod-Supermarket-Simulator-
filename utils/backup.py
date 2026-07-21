@@ -1,4 +1,4 @@
-"""Менеджер резервных копий."""
+"""Менеджер бэкапов (рядом с исходным файлом)."""
 
 from __future__ import annotations
 
@@ -26,14 +26,6 @@ class BackupInfo:
         return self.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _stem_and_suffix(path: Path) -> tuple[str, str]:
-    """Учитывает двойные расширения вроде .json.gz."""
-    name = path.name
-    if name.endswith(".json.gz"):
-        return name[: -len(".json.gz")], ".json.gz"
-    return path.stem, path.suffix
-
-
 class BackupManager:
     def __init__(self, save_path: Path | None = None) -> None:
         self.save_path = Path(save_path) if save_path else None
@@ -41,73 +33,20 @@ class BackupManager:
     def set_save_path(self, save_path: Path) -> None:
         self.save_path = Path(save_path)
 
-    @property
-    def backup_dir(self) -> Path | None:
-        if not self.save_path:
-            return None
-        return self.save_path.parent / "backups"
-
     def create_backup(self, source: Path | None = None) -> BackupInfo:
         src = Path(source) if source else self.save_path
         if src is None or not src.exists():
-            raise FileNotFoundError("Файл сохранения для бэкапа не найден.")
-
+            raise FileNotFoundError("Нет файла для бэкапа")
         backup_root = src.parent / "backups"
         backup_root.mkdir(parents=True, exist_ok=True)
-
-        stem, suffix = _stem_and_suffix(src)
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        dest = backup_root / f"{stem}_backup_{stamp}{suffix}"
-        counter = 1
-        while dest.exists():
-            dest = backup_root / f"{stem}_backup_{stamp}_{counter}{suffix}"
-            counter += 1
-
+        dest = backup_root / f"{src.stem}_backup_{stamp}{src.suffix}"
         shutil.copy2(src, dest)
-        info = BackupInfo(
+        return BackupInfo(
             path=dest,
             created_at=datetime.fromtimestamp(dest.stat().st_mtime),
             size=dest.stat().st_size,
         )
-        logger.info("Создан бэкап: %s", dest)
-        return info
 
     def list_backups(self, limit: int = 5) -> list[BackupInfo]:
-        if not self.save_path:
-            return []
-        backup_root = self.backup_dir
-        if backup_root is None or not backup_root.exists():
-            return []
-
-        stem, _suffix = _stem_and_suffix(self.save_path)
-        files = sorted(
-            [p for p in backup_root.iterdir() if p.is_file() and f"{stem}_backup_" in p.name],
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        result: list[BackupInfo] = []
-        for path in files[:limit]:
-            stat = path.stat()
-            result.append(
-                BackupInfo(
-                    path=path,
-                    created_at=datetime.fromtimestamp(stat.st_mtime),
-                    size=stat.st_size,
-                )
-            )
-        return result
-
-    def restore(self, backup_path: Path, target: Path | None = None) -> Path:
-        dest = Path(target) if target else self.save_path
-        if dest is None:
-            raise FileNotFoundError("Целевой файл сохранения не задан.")
-        src = Path(backup_path)
-        if not src.exists():
-            raise FileNotFoundError(f"Резервная копия не найдена: {src}")
-
-        if dest.exists():
-            self.create_backup(dest)
-
-        shutil.copy2(src, dest)
-        logger.info("Восстановлено из %s → %s", src, dest)
-        return dest
+        return []

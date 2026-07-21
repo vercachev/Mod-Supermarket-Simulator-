@@ -1,6 +1,4 @@
-"""
-Точка входа: Bitburner — Save Editor.
-"""
+"""Точка входа Cookie Clicker Save Editor."""
 
 from __future__ import annotations
 
@@ -16,10 +14,9 @@ from utils.constants import APP_NAME, log_file_path  # noqa: E402
 
 
 def setup_logging() -> None:
-    log_path = log_file_path()
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
     try:
-        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+        handlers.append(logging.FileHandler(log_file_path(), encoding="utf-8"))
     except OSError:
         pass
     logging.basicConfig(

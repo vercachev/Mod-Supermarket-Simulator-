@@ -1,4 +1,4 @@
-"""Константы Bitburner Save Editor."""
+"""Константы Cookie Clicker Save Editor."""
 
 from __future__ import annotations
 
@@ -6,63 +6,31 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "Bitburner — Save Editor v1.0"
-APP_TITLE = "⚡  BITBURNER — SAVE EDITOR"
-WINDOW_SIZE = "900x650"
+APP_NAME = "Cookie Clicker — Save Editor v1.0"
+APP_TITLE = "🍪  COOKIE CLICKER — SAVE EDITOR"
+WINDOW_SIZE = "720x560"
 
-ACCENT_GREEN = "#2ECC71"
-ACCENT_GREEN_HOVER = "#27AE60"
+ACCENT = "#E67E22"
+ACCENT_HOVER = "#D35400"
 STATUS_OK = "#2ECC71"
 STATUS_WARN = "#F39C12"
 STATUS_ERROR = "#E74C3C"
 STATUS_IDLE = "#95A5A6"
-DANGER_RED = "#E74C3C"
 
-# Папка загрузок — типичное место после Export save
 DEFAULT_EXPORT_DIR = os.path.expandvars(r"%USERPROFILE%\Downloads")
 
-GAME_PROCESS_NAMES = (
-    "Bitburner.exe",
-    "bitburner.exe",
-    "Bitburner",
-)
-
-SKILL_KEYS: dict[str, str] = {
-    "hacking": "Hacking",
-    "strength": "Strength",
-    "defense": "Defense",
-    "dexterity": "Dexterity",
-    "agility": "Agility",
-    "charisma": "Charisma",
-    "intelligence": "Intelligence",
-}
-
-MAX_MONEY = 1e33  # mid/late game Bitburner
-MAX_SKILL = 1e33  # hacking и др. навыки легко выше 1e6
-MAX_BITNODE = 14
-MIN_BITNODE = 1
-MIN_SKILL = 0
-
-EXPLOIT_EDIT_SAVE = "EditSaveFile"
+MAX_COOKIES = 1e308  # JS Number.MAX_VALUE порядка
 
 MESSAGES = {
-    "file_not_found": "❌ Файл сохранения не найден.",
-    "file_corrupt": (
-        "❌ Не удалось прочитать сейв Bitburner.\n\n"
-        "Нужен файл из игры: Options → Export game / Export save\n"
-        "(обычно bitburnerSave_....json или .json.gz)."
+    "no_file": "Сначала вставьте или откройте сейв Cookie Clicker.",
+    "corrupt": (
+        "❌ Не удалось прочитать сейв.\n\n"
+        "В игре: Options → Export save / Save to file\n"
+        "и откройте этот текст/файл здесь."
     ),
-    "game_running": (
-        "⚠️ Кажется, Bitburner запущен. Лучше закрыть игру перед импортом сейва."
-    ),
-    "invalid_number": "❌ Введите корректное число (от {min_v} до {max_v})",
-    "save_ok": "✅ Файл обновлён! Бэкап создан. Импортируйте сейв обратно в игру.",
-    "backup_ok": "✅ Резервная копия создана: {name}",
-    "restore_ok": "✅ Восстановлено из резервной копии от {date}",
-    "no_file": "Сначала откройте экспортированный сейв Bitburner.",
-    "json_invalid": "❌ Неверный JSON. Изменения не применены.",
-    "load_ok": "● Файл загружен: {name}",
-    "not_loaded": "● Файл не загружен",
+    "save_ok": "✅ Готово! Теперь в игре: Options → Import save (вставьте код).",
+    "not_loaded": "● Сейв не загружен",
+    "load_ok": "● Сейв загружен",
 }
 
 
