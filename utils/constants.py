@@ -19,11 +19,22 @@ STATUS_ERROR = "#E74C3C"
 STATUS_IDLE = "#95A5A6"
 DANGER_RED = "#E74C3C"
 
-# Стандартный путь к сохранениям Windows
+# Стандартный путь к сохранениям (Steam / обычная Windows-версия)
 DEFAULT_SAVE_PATH = os.path.expandvars(
     r"%APPDATA%\..\LocalLow\Nokta Games\Supermarket Simulator"
 )
-DEFAULT_SAVE_FILENAMES = ("SaveFile.es3", "Save.es3", "slot_0.es3")
+# Xbox Game Pass / Microsoft Store (папка игры в C:\XboxGames НЕ содержит сейвы)
+XBOX_PACKAGES_ROOT = os.path.expandvars(r"%LOCALAPPDATA%\Packages")
+XBOX_PACKAGE_NAME_HINT = "SupermarketSimulator"
+
+DEFAULT_SAVE_FILENAMES = (
+    "SaveFile.es3",
+    "Save.es3",
+    "slot_0.es3",
+    "slot_1.es3",
+    "slot_2.es3",
+    "slot_3.es3",
+)
 
 GAME_PROCESS_NAMES = (
     "Supermarket Simulator.exe",

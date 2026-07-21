@@ -111,25 +111,39 @@ python main.py
 
 Если не нашла — нажмите **«Открыть сохранение»** и укажите файл вручную.
 
-Обычный путь на Windows:
+#### Важно: папка игры ≠ папка сохранений
+
+Путь вроде `C:\XboxGames\Supermarket Simulator` — это **сама игра**.  
+Редактору нужен **файл сохранения**, он лежит в AppData, не в XboxGames.
+
+#### Steam / обычная версия
 
 ```text
 C:\Users\ВАШЕ_ИМЯ\AppData\LocalLow\Nokta Games\Supermarket Simulator\SaveFile.es3
 ```
 
-Быстрый способ открыть папку:
-
-1. Нажмите `Win + R`
-2. Вставьте:
+Быстро открыть (`Win + R`):
 
 ```text
 %USERPROFILE%\AppData\LocalLow\Nokta Games\Supermarket Simulator
 ```
 
-3. Enter  
-Нужный файл обычно называется **`SaveFile.es3`**.
+#### Xbox / Game Pass (Microsoft Store)
 
-> Папка `AppData` скрыта — через `%USERPROFILE%\AppData\...` она всё равно откроется.
+```text
+C:\Users\ВАШЕ_ИМЯ\AppData\Local\Packages\...\SupermarketSimulator...\SystemAppData\wgs
+```
+
+Быстро открыть (`Win + R`):
+
+```text
+%LOCALAPPDATA%\Packages
+```
+
+Там найдите папку с именем вроде `...SupermarketSimulator...` → `SystemAppData` → `wgs`.  
+Файлы могут быть **без расширения** `.es3` — в редакторе выберите фильтр **All files (*.*)**.
+
+> Папка `AppData` скрыта — через `%LOCALAPPDATA%` / `%USERPROFILE%\AppData\...` она откроется.
 
 ### 4. Измените нужное
 

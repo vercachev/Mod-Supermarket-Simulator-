@@ -67,23 +67,84 @@ class SaveHandler:
         return Path(DEFAULT_SAVE_PATH).resolve()
 
     @classmethod
+    def candidate_save_dirs(cls) -> list[Path]:
+        """Папки, где могут лежать сохранения (Steam + Xbox Game Pass)."""
+        from utils.constants import XBOX_PACKAGE_NAME_HINT, XBOX_PACKAGES_ROOT
+
+        dirs: list[Path] = []
+        steam_dir = cls.default_save_dir()
+        if steam_dir.exists():
+            dirs.append(steam_dir)
+
+        packages = Path(XBOX_PACKAGES_ROOT)
+        if packages.exists():
+            for pkg in packages.glob(f"*{XBOX_PACKAGE_NAME_HINT}*"):
+                wgs = pkg / "SystemAppData" / "wgs"
+                if wgs.exists():
+                    dirs.append(wgs)
+                    # Вложенные контейнеры Xbox
+                    for child in wgs.iterdir():
+                        if child.is_dir():
+                            dirs.append(child)
+
+        # Уникальные пути с сохранением порядка
+        unique: list[Path] = []
+        seen: set[Path] = set()
+        for d in dirs:
+            resolved = d.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append(resolved)
+        return unique
+
+    @staticmethod
+    def _looks_like_save_text(path: Path) -> bool:
+        """Проверяет, похож ли файл без .es3 на JSON-сейв игры."""
+        try:
+            if path.stat().st_size < 20 or path.stat().st_size > 50_000_000:
+                return False
+            sample = path.read_bytes()[:4096]
+            if b"\x00" in sample[:64]:
+                return False
+            text = sample.decode("utf-8", errors="ignore")
+            return ("Money" in text or "Progression" in text or "UnlockedLicenses" in text) and "{" in text
+        except OSError:
+            return False
+
+    @classmethod
     def find_default_saves(cls) -> list[Path]:
-        """Ищет .es3 в стандартной папке сохранений."""
-        root = cls.default_save_dir()
+        """Ищет сохранения в Steam LocalLow и Xbox Packages/wgs."""
         found: list[Path] = []
-        if not root.exists():
-            logger.info("Папка сохранений не найдена: %s", root)
+        seen: set[Path] = set()
+
+        def add(path: Path) -> None:
+            resolved = path.resolve()
+            if resolved in seen or not path.is_file():
+                return
+            if "backup" in path.name.lower():
+                return
+            seen.add(resolved)
+            found.append(path)
+
+        roots = cls.candidate_save_dirs()
+        if not roots:
+            logger.info("Папки сохранений не найдены (ни Steam, ни Xbox)")
             return found
 
-        for name in DEFAULT_SAVE_FILENAMES:
-            candidate = root / name
-            if candidate.is_file():
-                found.append(candidate)
+        for root in roots:
+            for name in DEFAULT_SAVE_FILENAMES:
+                add(root / name)
 
-        # Любые другие .es3 (кроме backups)
-        for path in sorted(root.glob("*.es3"), key=lambda p: p.stat().st_mtime, reverse=True):
-            if path not in found and "backup" not in path.name.lower():
-                found.append(path)
+            for path in root.glob("*.es3"):
+                add(path)
+
+            # Xbox WGS: файлы часто без расширения, с hex-именами
+            for path in root.iterdir():
+                if path.is_file() and path.suffix.lower() != ".es3":
+                    if cls._looks_like_save_text(path):
+                        add(path)
+
+        found.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return found
 
     # ------------------------------------------------------------------ #

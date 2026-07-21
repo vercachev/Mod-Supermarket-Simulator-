@@ -201,9 +201,8 @@ class App(ctk.CTk):
             self.load_file(newest)
 
     def open_save_dialog(self) -> None:
-        initial = SaveHandler.default_save_dir()
-        if not initial.exists():
-            initial = Path.home()
+        dirs = SaveHandler.candidate_save_dirs()
+        initial = dirs[0] if dirs else Path.home()
         path = filedialog.askopenfilename(
             title="Открыть файл сохранения",
             initialdir=str(initial),
