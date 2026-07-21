@@ -57,6 +57,22 @@ class BitburnerSaveTests(unittest.TestCase):
         self.assertEqual(snap.skills["hacking"], 1000)
         self.assertIn(EXPLOIT_EDIT_SAVE, snap.exploits)
 
+    def test_surgical_patch_keeps_version(self) -> None:
+        h = SaveHandler()
+        h.load(self.gz_path)
+        before_ver = h.meta.game_version
+        h.set_money(42)
+        out = Path(self.tmp.name) / "out.json.gz"
+        h.save(out)
+        h2 = SaveHandler()
+        h2.load(out)
+        self.assertEqual(h2.get_snapshot().money, 42)
+        self.assertEqual(h2.meta.game_version, before_ver)
+        # PlayerSave всё ещё строка
+        data = h2.unwrap(h2.root)
+        self.assertIsInstance(data["PlayerSave"], str)
+        self.assertIn('"money":42', data["PlayerSave"])
+
     def test_player_save_stays_string(self) -> None:
         h = SaveHandler()
         h.load(self.b64_path)

@@ -325,13 +325,17 @@ class App(ctk.CTk):
                 APP_NAME,
                 "✅ Файл с правками записан!\n\n"
                 f"Путь:\n{saved}\n\n"
-                f"Проверка money в файле: {money_on_disk:g}"
+                f"Проверка money в файле: {money_on_disk:g}\n"
+                f"(если тут не то число — Import бесполезен)\n"
                 f"{backup_line}\n\n"
-                "Дальше ОБЯЗАТЕЛЬНО в Bitburner:\n"
-                "1) Options → Import save / Import game\n"
-                "2) Выберите именно этот файл (*_EDITED*)\n"
-                "3) Дождитесь перезагрузки игры\n\n"
-                "НЕ делайте Export снова — он затрёт правки старым сейвом!",
+                "В Bitburner строго так:\n"
+                "1) Options → Import save\n"
+                "2) Выберите ЭТОТ файл из Downloads (*_EDITED*)\n"
+                "3) Откроется сравнение — справа money должно быть "
+                f"{money_on_disk:g}\n"
+                "4) Подтвердите Import (кнопка продолжить/import)\n\n"
+                "Если справа money старое/маленькое — выбрали не тот файл.\n"
+                "НЕ делайте Export после правок — он затрёт файл.",
             )
             self.set_status(f"● Сохранено: {saved.name} · money={money_on_disk:g}", STATUS_OK)
         except ValidationError as exc:
