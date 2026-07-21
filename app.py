@@ -266,21 +266,74 @@ class App(ctk.CTk):
     def save_changes(self) -> None:
         if not self._require_file():
             return
+        # Всегда пишем ОТДЕЛЬНЫЙ файл *_EDITED*, чтобы новый Export из игры
+        # не затёр правки и было понятно, что импортировать.
+        suggested = self.handler.suggested_edited_path()
+        self._save_to_path(suggested)
+
+    def save_as(self) -> None:
+        if not self._require_file():
+            return
+        suggested = self.handler.suggested_edited_path() or Path.home() / "bitburnerSave_EDITED.json.gz"
+        path = filedialog.asksaveasfilename(
+            title="Сохранить изменённый сейв",
+            initialdir=str(suggested.parent),
+            initialfile=suggested.name,
+            defaultextension=".json.gz",
+            filetypes=[
+                ("Bitburner gzip", "*.json.gz"),
+                ("Bitburner json", "*.json"),
+                ("All files", "*.*"),
+            ],
+        )
+        if path:
+            self._save_to_path(Path(path))
+
+    def _save_to_path(self, dest: Path | None) -> None:
+        if dest is None:
+            messagebox.showerror(APP_NAME, "Не удалось выбрать путь сохранения.")
+            return
         if SaveHandler.is_game_running():
-            if not messagebox.askyesno(APP_NAME, MESSAGES["game_running"] + "\n\nВсё равно сохранить файл?"):
+            if not messagebox.askyesno(
+                APP_NAME,
+                MESSAGES["game_running"] + "\n\nВсё равно сохранить файл?",
+            ):
                 return
         try:
             snap = self._collect_ui()
             self.handler.apply_snapshot(snap)
-            info = self.backups.create_backup(self.handler.path)
-            self.handler.save()
+            if self.handler.path and self.handler.path.exists():
+                self.backups.set_save_path(self.handler.path)
+                info = self.backups.create_backup(self.handler.path)
+            else:
+                info = None
+
+            # Сохраняем в выбранный формат по расширению
+            if dest.name.endswith(".json.gz"):
+                self.handler.meta.format_kind = "gzip"
+            elif dest.suffix == ".json":
+                self.handler.meta.format_kind = "base64"
+
+            saved = self.handler.save(dest)
+            money_on_disk = self.handler.verify_money_on_disk(saved)
+            self.path_var.set(str(saved))
+            self.backups.set_save_path(saved)
             self._refresh_ui_from_handler()
+
+            backup_line = f"\nБэкап: {info.display_name}" if info else ""
             messagebox.showinfo(
                 APP_NAME,
-                MESSAGES["save_ok"] + f"\nБэкап: {info.display_name}\n\n"
-                "В Bitburner: Options → Import save → выберите этот файл.",
+                "✅ Файл с правками записан!\n\n"
+                f"Путь:\n{saved}\n\n"
+                f"Проверка money в файле: {money_on_disk:g}"
+                f"{backup_line}\n\n"
+                "Дальше ОБЯЗАТЕЛЬНО в Bitburner:\n"
+                "1) Options → Import save / Import game\n"
+                "2) Выберите именно этот файл (*_EDITED*)\n"
+                "3) Дождитесь перезагрузки игры\n\n"
+                "НЕ делайте Export снова — он затрёт правки старым сейвом!",
             )
-            self.set_status(MESSAGES["save_ok"], STATUS_OK)
+            self.set_status(f"● Сохранено: {saved.name} · money={money_on_disk:g}", STATUS_OK)
         except ValidationError as exc:
             messagebox.showerror(APP_NAME, str(exc))
         except Exception as exc:  # noqa: BLE001
