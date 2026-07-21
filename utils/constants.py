@@ -37,10 +37,11 @@ SKILL_KEYS: dict[str, str] = {
     "intelligence": "Intelligence",
 }
 
-MAX_MONEY = 1e33  # достаточно для mid/late game
-MAX_SKILL = 1_000_000
+MAX_MONEY = 1e33  # mid/late game Bitburner
+MAX_SKILL = 1e33  # hacking и др. навыки легко выше 1e6
 MAX_BITNODE = 14
 MIN_BITNODE = 1
+MIN_SKILL = 0
 
 EXPLOIT_EDIT_SAVE = "EditSaveFile"
 

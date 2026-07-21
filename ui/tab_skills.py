@@ -68,7 +68,8 @@ class SkillsTab(ctk.CTkScrollableFrame):
     def get_skills(self) -> dict[str, float]:
         result: dict[str, float] = {}
         for key, var in self._vars.items():
-            result[key] = float(validate_skill(var.get()))
+            title = SKILL_KEYS.get(key, key)
+            result[key] = float(validate_skill(var.get(), skill_name=title))
         return result
 
     def _set_all(self, level: int) -> None:

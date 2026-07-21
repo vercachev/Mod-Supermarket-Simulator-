@@ -91,10 +91,17 @@ class BackupTests(unittest.TestCase):
 class ValidatorTests(unittest.TestCase):
     def test_money_sci(self) -> None:
         self.assertEqual(validate_money("1e6"), 1_000_000.0)
+        self.assertEqual(validate_money("1e+12"), 1_000_000_000_000.0)
+        self.assertEqual(validate_money("1E12"), 1_000_000_000_000.0)
 
     def test_money_bad(self) -> None:
         with self.assertRaises(ValidationError):
             validate_money(-1)
+
+    def test_high_skill_allowed(self) -> None:
+        from utils.validator import validate_skill
+
+        self.assertEqual(validate_skill("2500000", "Hacking"), 2_500_000.0)
 
 
 if __name__ == "__main__":
