@@ -6,56 +6,47 @@ from typing import Callable
 
 import customtkinter as ctk
 
-from utils.constants import ACCENT_GREEN, ACCENT_GREEN_HOVER, MAX_FUNDS
-from utils.validator import ValidationError, validate_funds
+from utils.constants import ACCENT_GREEN, ACCENT_GREEN_HOVER, MAX_MONEY
+from utils.validator import ValidationError, validate_money
 
 
 class MoneyTab(ctk.CTkFrame):
-    def __init__(
-        self,
-        master: ctk.CTkBaseClass,
-        on_apply: Callable[[float], None],
-        **kwargs,
-    ) -> None:
+    def __init__(self, master, on_apply: Callable[[float], None], **kwargs) -> None:
         super().__init__(master, fg_color="transparent", **kwargs)
         self.on_apply = on_apply
         self._build()
 
     def _build(self) -> None:
-        title = ctk.CTkLabel(
-            self,
-            text="Текущий баланс:",
-            font=ctk.CTkFont(size=22, weight="bold"),
-        )
-        title.pack(pady=(28, 12))
+        ctk.CTkLabel(
+            self, text="Деньги (money):", font=ctk.CTkFont(size=22, weight="bold")
+        ).pack(pady=(28, 12))
 
-        self.funds_var = ctk.StringVar(value="0")
-        self.entry = ctk.CTkEntry(
+        self.money_var = ctk.StringVar(value="1000")
+        ctk.CTkEntry(
             self,
-            textvariable=self.funds_var,
-            width=320,
+            textvariable=self.money_var,
+            width=360,
             height=48,
             justify="center",
-            font=ctk.CTkFont(size=24, weight="bold"),
+            font=ctk.CTkFont(size=22, weight="bold"),
             border_color=ACCENT_GREEN,
-        )
-        self.entry.pack(pady=8)
+        ).pack(pady=8)
 
-        hint = ctk.CTkLabel(
+        ctk.CTkLabel(
             self,
-            text=f"Только числа · максимум {MAX_FUNDS:,}".replace(",", " "),
+            text="Можно научную запись: 1e12  ·  максимум очень большой",
             text_color="#7F8C8D",
             font=ctk.CTkFont(size=12),
-        )
-        hint.pack(pady=(0, 16))
+        ).pack(pady=(0, 12))
 
         row1 = ctk.CTkFrame(self, fg_color="transparent")
         row1.pack(pady=4)
-        for amount in (10_000, 50_000, 100_000, 500_000):
+        for amount in (1e6, 1e9, 1e12, 1e15):
+            label = f"+{amount:.0e} $".replace("+1e+", "+1e")
             ctk.CTkButton(
                 row1,
-                text=f"+{amount:,} $".replace(",", " "),
-                width=120,
+                text=f"+{amount:g}",
+                width=110,
                 command=lambda a=amount: self._add(a),
                 fg_color="#1E8449",
                 hover_color=ACCENT_GREEN_HOVER,
@@ -63,12 +54,12 @@ class MoneyTab(ctk.CTkFrame):
 
         row2 = ctk.CTkFrame(self, fg_color="transparent")
         row2.pack(pady=8)
-        for amount in (1_000_000, 9_999_999):
+        for amount in (1e18, 1e21):
             ctk.CTkButton(
                 row2,
-                text=f"Установить {amount:,} $".replace(",", " "),
-                width=200,
-                command=lambda a=amount: self.set_funds(a),
+                text=f"Установить {amount:g}",
+                width=180,
+                command=lambda a=amount: self.set_money(a),
                 fg_color="#145A32",
                 hover_color=ACCENT_GREEN_HOVER,
             ).pack(side="left", padx=6)
@@ -88,24 +79,26 @@ class MoneyTab(ctk.CTkFrame):
         self.error_label = ctk.CTkLabel(self, text="", text_color="#E74C3C")
         self.error_label.pack()
 
-    def set_funds(self, value: float | int) -> None:
-        self.funds_var.set(str(int(value) if float(value).is_integer() else value))
+    def set_money(self, value: float | int) -> None:
+        if abs(value) >= 1e6:
+            self.money_var.set(f"{value:.6g}")
+        else:
+            self.money_var.set(str(int(value) if float(value).is_integer() else value))
         self.error_label.configure(text="")
 
-    def get_funds(self) -> float:
-        return validate_funds(self.funds_var.get())
+    def get_money(self) -> float:
+        return validate_money(self.money_var.get())
 
-    def _add(self, amount: int) -> None:
+    def _add(self, amount: float) -> None:
         try:
-            current = validate_funds(self.funds_var.get())
+            current = validate_money(self.money_var.get())
         except ValidationError:
             current = 0.0
-        new_val = min(MAX_FUNDS, current + amount)
-        self.set_funds(new_val)
+        self.set_money(min(MAX_MONEY, current + amount))
 
     def _apply(self) -> None:
         try:
-            value = self.get_funds()
+            value = self.get_money()
             self.error_label.configure(text="")
             self.on_apply(value)
         except ValidationError as exc:

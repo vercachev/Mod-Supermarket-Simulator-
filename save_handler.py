@@ -1,10 +1,11 @@
-"""Чтение, парсинг и запись файлов Easy Save 3 (.es3)."""
+"""Чтение/запись экспортированных сейвов Bitburner (.json / .json.gz)."""
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import logging
-import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,16 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from utils.constants import (
-    ALL_LICENSE_IDS,
-    BASIC_LICENSE_ID,
-    DEFAULT_SAVE_FILENAMES,
-    DEFAULT_SAVE_PATH,
-    FIELD_ALIASES,
+    DEFAULT_EXPORT_DIR,
+    EXPLOIT_EDIT_SAVE,
     GAME_PROCESS_NAMES,
     MESSAGES,
+    SKILL_KEYS,
 )
 
 logger = logging.getLogger(__name__)
+
+GZIP_MAGIC = b"\x1f\x8b"
 
 
 @dataclass
@@ -30,430 +31,328 @@ class FileMeta:
     size: int = 0
     modified: datetime | None = None
     game_version: str | None = None
-    format_kind: str = "unknown"  # json | es3_typed | raw
+    format_kind: str = "unknown"  # gzip | base64 | json_plain
 
 
 @dataclass
 class SaveSnapshot:
-    """Снимок редактируемых полей для UI."""
+    money: float = 1000.0
+    skills: dict[str, float] = field(default_factory=dict)
+    bit_node: int = 1
+    karma: float = 0.0
+    exploits: list[str] = field(default_factory=list)
+    factions: list[str] = field(default_factory=list)
+    playtime_ms: float = 0.0
+    hacking_level: float = 1.0
 
-    money: float = 0.0
-    store_name: str = ""
-    day: int = 1
-    licenses: list[int] = field(default_factory=lambda: [BASIC_LICENSE_ID])
-    checkout_count: int | None = None
-    shelf_count: int | None = None
-    employee_count: int | None = None
-    completed_checkouts: int | None = None
-    store_level: int | None = None
-    store_upgrade: int | None = None
+    def __post_init__(self) -> None:
+        if not self.skills:
+            self.skills = {key: 1.0 for key in SKILL_KEYS}
 
 
 class SaveHandler:
-    """Работа с .es3 сохранениями Supermarket Simulator."""
+    """Работа с экспортом Bitburner (Options → Export save)."""
 
     def __init__(self) -> None:
         self.path: Path | None = None
-        self.data: dict[str, Any] = {}
-        self.raw_text: str = ""
+        self.root: dict[str, Any] = {}  # {ctor, data} или data-объект
+        self.player: dict[str, Any] = {}  # содержимое PlayerObject.data
         self.meta = FileMeta()
-        self._original_data: dict[str, Any] = {}
+        self._original_root: dict[str, Any] = {}
+        self._original_player: dict[str, Any] = {}
+        self._raw_decoded_json: str = ""
 
-    # ------------------------------------------------------------------ #
-    # Обнаружение файлов
-    # ------------------------------------------------------------------ #
     @staticmethod
     def default_save_dir() -> Path:
-        return Path(DEFAULT_SAVE_PATH).resolve()
-
-    @classmethod
-    def candidate_save_dirs(cls) -> list[Path]:
-        """Папки, где могут лежать сохранения (Steam + Xbox Game Pass)."""
-        from utils.constants import XBOX_PACKAGE_NAME_HINT, XBOX_PACKAGES_ROOT
-
-        dirs: list[Path] = []
-        steam_dir = cls.default_save_dir()
-        if steam_dir.exists():
-            dirs.append(steam_dir)
-
-        packages = Path(XBOX_PACKAGES_ROOT)
-        if packages.exists():
-            for pkg in packages.glob(f"*{XBOX_PACKAGE_NAME_HINT}*"):
-                wgs = pkg / "SystemAppData" / "wgs"
-                if wgs.exists():
-                    dirs.append(wgs)
-                    # Вложенные контейнеры Xbox
-                    for child in wgs.iterdir():
-                        if child.is_dir():
-                            dirs.append(child)
-
-        # Уникальные пути с сохранением порядка
-        unique: list[Path] = []
-        seen: set[Path] = set()
-        for d in dirs:
-            resolved = d.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                unique.append(resolved)
-        return unique
-
-    @staticmethod
-    def _looks_like_save_text(path: Path) -> bool:
-        """Проверяет, похож ли файл без .es3 на JSON-сейв игры."""
-        try:
-            if path.stat().st_size < 20 or path.stat().st_size > 50_000_000:
-                return False
-            sample = path.read_bytes()[:4096]
-            if b"\x00" in sample[:64]:
-                return False
-            text = sample.decode("utf-8", errors="ignore")
-            return ("Money" in text or "Progression" in text or "UnlockedLicenses" in text) and "{" in text
-        except OSError:
-            return False
+        path = Path(DEFAULT_EXPORT_DIR)
+        return path if path.exists() else Path.home()
 
     @classmethod
     def find_default_saves(cls) -> list[Path]:
-        """Ищет сохранения в Steam LocalLow и Xbox Packages/wgs."""
+        roots = [cls.default_save_dir(), Path.home() / "Desktop", Path.home() / "Documents"]
         found: list[Path] = []
         seen: set[Path] = set()
-
-        def add(path: Path) -> None:
-            resolved = path.resolve()
-            if resolved in seen or not path.is_file():
-                return
-            if "backup" in path.name.lower():
-                return
-            seen.add(resolved)
-            found.append(path)
-
-        roots = cls.candidate_save_dirs()
-        if not roots:
-            logger.info("Папки сохранений не найдены (ни Steam, ни Xbox)")
-            return found
-
         for root in roots:
-            for name in DEFAULT_SAVE_FILENAMES:
-                add(root / name)
-
-            for path in root.glob("*.es3"):
-                add(path)
-
-            # Xbox WGS: файлы часто без расширения, с hex-именами
-            for path in root.iterdir():
-                if path.is_file() and path.suffix.lower() != ".es3":
-                    if cls._looks_like_save_text(path):
-                        add(path)
-
+            if not root.exists():
+                continue
+            for pattern in ("bitburnerSave_*.json.gz", "bitburnerSave_*.json", "*.json.gz"):
+                for path in root.glob(pattern):
+                    if "bitburner" not in path.name.lower() and pattern.startswith("*"):
+                        continue
+                    resolved = path.resolve()
+                    if resolved not in seen and path.is_file():
+                        seen.add(resolved)
+                        found.append(path)
         found.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return found
 
-    # ------------------------------------------------------------------ #
-    # Парсинг ES3
-    # ------------------------------------------------------------------ #
     @staticmethod
-    def unwrap_es3(node: Any) -> Any:
-        """Разворачивает обёртки {__type, value}."""
-        if isinstance(node, dict) and "__type" in node and "value" in node:
-            return SaveHandler.unwrap_es3(node["value"])
-        if isinstance(node, dict):
-            return {k: SaveHandler.unwrap_es3(v) for k, v in node.items()}
-        if isinstance(node, list):
-            return [SaveHandler.unwrap_es3(v) for v in node]
+    def unwrap(node: Any) -> Any:
+        if isinstance(node, dict) and "ctor" in node and "data" in node:
+            return node["data"]
         return node
 
     @staticmethod
-    def parse_es3_value(data: dict[str, Any], key: str) -> Any:
-        """Извлекает значение из ES3 структуры, обрабатывая __type обёртки."""
-        if key not in data:
-            return None
-        val = data[key]
-        if isinstance(val, dict) and "__type" in val:
-            return val.get("value")
-        return val
+    def wrap_player(data: dict[str, Any], ctor: str = "PlayerObject") -> dict[str, Any]:
+        return {"ctor": ctor, "data": data}
 
-    @staticmethod
-    def set_es3_value(data: dict[str, Any], key: str, new_value: Any) -> None:
-        """Устанавливает значение, сохраняя ES3 структуру."""
-        if key in data and isinstance(data[key], dict) and "__type" in data[key]:
-            data[key]["value"] = new_value
-        else:
-            data[key] = new_value
+    def _decode_bytes(self, raw: bytes) -> tuple[str, str]:
+        """Возвращает (json_text, format_kind)."""
+        if raw.startswith(GZIP_MAGIC):
+            try:
+                text = gzip.decompress(raw).decode("utf-8")
+                return text, "gzip"
+            except OSError as exc:
+                raise ValueError(MESSAGES["file_corrupt"]) from exc
 
-    def _detect_format(self, text: str, data: dict[str, Any] | None) -> str:
-        if data is None:
-            return "raw"
-        for value in data.values():
-            if isinstance(value, dict) and "__type" in value:
-                return "es3_typed"
-        return "json"
-
-    def _try_load_json(self, text: str) -> dict[str, Any] | None:
+        # Может быть текстовый base64 или уже JSON
         try:
-            parsed = json.loads(text)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
+            as_text = raw.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError(MESSAGES["file_corrupt"]) from exc
+
+        if as_text.startswith("{") or as_text.startswith("["):
+            return as_text, "json_plain"
+
+        # Base64 (иногда с переносами строк)
+        compact = "".join(as_text.split())
+        try:
+            decoded = base64.b64decode(compact, validate=False)
+            # Иногда base64 оборачивает gzip
+            if decoded.startswith(GZIP_MAGIC):
+                text = gzip.decompress(decoded).decode("utf-8")
+                return text, "gzip"
+            text = decoded.decode("utf-8")
+            if text.startswith("{") or text.startswith("["):
+                return text, "base64"
+        except Exception:  # noqa: BLE001
             pass
-        return None
 
-    def _extract_json_via_regex(self, text: str) -> dict[str, Any] | None:
-        """Пытается вытащить JSON-объект из текста с мусором вокруг."""
-        match = re.search(r"\{[\s\S]*\}", text)
-        if not match:
-            return None
-        return self._try_load_json(match.group(0))
+        raise ValueError(MESSAGES["file_corrupt"])
 
-    def _extract_json_from_bytes(self, raw: bytes) -> tuple[dict[str, Any] | None, str]:
-        """Пробует UTF-8 и поиск JSON внутри бинарной обёртки."""
-        for encoding in ("utf-8-sig", "utf-8", "utf-16-le", "latin-1"):
+    def _encode_bytes(self, json_text: str, format_kind: str) -> bytes:
+        if format_kind == "gzip":
+            return gzip.compress(json_text.encode("utf-8"))
+        if format_kind == "base64":
+            return base64.b64encode(json_text.encode("utf-8"))
+        return json_text.encode("utf-8")
+
+    def _extract_player(self, root: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """
+        Возвращает (player_data, player_envelope).
+        player_envelope — объект, который нужно сериализовать обратно в PlayerSave
+        (обычно {ctor, data} или сам data-словарь).
+        """
+        data = self.unwrap(root)
+        if not isinstance(data, dict):
+            raise ValueError(MESSAGES["file_corrupt"])
+
+        player_save = data.get("PlayerSave")
+        if not isinstance(player_save, str):
+            # Иногда уже объект
+            if isinstance(player_save, dict):
+                envelope = player_save
+            else:
+                raise ValueError(MESSAGES["file_corrupt"])
+        else:
             try:
-                text = raw.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-            data = self._try_load_json(text.strip())
-            if data is not None:
-                return data, text
-            data = self._extract_json_via_regex(text)
-            if data is not None:
-                return data, text
+                envelope = json.loads(player_save)
+            except json.JSONDecodeError as exc:
+                raise ValueError(MESSAGES["file_corrupt"]) from exc
 
-        # Бинарный контейнер: ищем маркер JSON с ключевыми полями игры
-        for marker in (b'"Money"', b'"Progression"', b'"UnlockedLicenses"', b'"CurrentDay"'):
-            idx = raw.find(marker)
-            if idx < 0:
-                continue
-            start = raw.rfind(b"{", 0, idx)
-            if start < 0:
-                continue
-            chunk = raw[start:]
-            # Обрезаем по последней закрывающей скобке
-            end = chunk.rfind(b"}")
-            if end < 0:
-                continue
-            chunk = chunk[: end + 1]
-            try:
-                text = chunk.decode("utf-8", errors="ignore")
-            except Exception:  # noqa: BLE001
-                continue
-            data = self._try_load_json(text) or self._extract_json_via_regex(text)
-            if data is not None:
-                return data, text
-        return None, ""
-
-    @staticmethod
-    def _is_xbox_wgs_path(path: Path) -> bool:
-        parts = [p.lower() for p in path.parts]
-        return "packages" in parts and "wgs" in parts
+        player_data = self.unwrap(envelope)
+        if not isinstance(player_data, dict):
+            raise ValueError(MESSAGES["file_corrupt"])
+        return player_data, envelope if isinstance(envelope, dict) else self.wrap_player(player_data)
 
     def load(self, path: Path | str) -> None:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(MESSAGES["file_not_found"])
 
-        raw_bytes = path.read_bytes()
-        data, text = self._extract_json_from_bytes(raw_bytes)
+        raw = path.read_bytes()
+        text, format_kind = self._decode_bytes(raw)
+        try:
+            root = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(MESSAGES["file_corrupt"]) from exc
 
-        if data is None:
-            if self._is_xbox_wgs_path(path):
-                raise ValueError(MESSAGES["file_xbox_encrypted"])
+        if not isinstance(root, dict):
             raise ValueError(MESSAGES["file_corrupt"])
 
+        player_data, envelope = self._extract_player(root)
+        # Нормализуем envelope к ctor/data, если это был плоский объект
+        if "ctor" not in envelope:
+            envelope = self.wrap_player(player_data)
+        else:
+            envelope["data"] = player_data
+
         self.path = path
-        self.raw_text = text
-        self.data = data
-        self._original_data = deepcopy(data)
+        self.root = root
+        self.player = player_data
+        self._player_envelope = envelope
+        self._raw_decoded_json = text
+        self._original_root = deepcopy(root)
+        self._original_player = deepcopy(player_data)
         self.meta = FileMeta(
             path=path,
             size=path.stat().st_size,
             modified=datetime.fromtimestamp(path.stat().st_mtime),
-            game_version=self._find_game_version(data),
-            format_kind=self._detect_format(text, data),
+            game_version=self._read_version(root),
+            format_kind=format_kind,
         )
-        logger.info("Загружен файл %s (формат: %s)", path, self.meta.format_kind)
+        logger.info("Загружен Bitburner сейв %s (%s)", path.name, format_kind)
 
-    def reload(self) -> None:
-        if not self.path:
-            raise FileNotFoundError(MESSAGES["no_file"])
-        self.load(self.path)
-
-    # ------------------------------------------------------------------ #
-    # Поиск / установка значений по дереву
-    # ------------------------------------------------------------------ #
-    def _walk(self, node: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], Any]]:
-        results: list[tuple[tuple[str, ...], Any]] = []
-        if isinstance(node, dict):
-            # Не спускаемся только в value обёртки — обходим и их
-            for key, value in node.items():
-                if key == "__type":
-                    continue
-                cur = path + (key,)
-                results.append((cur, value))
-                results.extend(self._walk(value, cur))
-        elif isinstance(node, list):
-            for idx, value in enumerate(node):
-                cur = path + (str(idx),)
-                results.extend(self._walk(value, cur))
-        return results
-
-    def find_first(self, *keys: str) -> tuple[tuple[str, ...] | None, Any]:
-        """Ищет первое вхождение любого из ключей в дереве данных."""
-        wanted = set(keys)
-        for path, value in self._walk(self.data):
-            if path and path[-1] in wanted:
-                # Если это ES3 обёртка — вернём value
-                if isinstance(value, dict) and "__type" in value and "value" in value:
-                    return path, value["value"]
-                return path, value
-        return None, None
-
-    def _resolve_parent(self, path: tuple[str, ...]) -> dict[str, Any] | None:
-        """Возвращает родительский dict для последнего ключа пути."""
-        if not path:
+    def _read_version(self, root: dict[str, Any]) -> str | None:
+        data = self.unwrap(root)
+        if not isinstance(data, dict):
             return None
-        parent: Any = self.data
-        for part in path[:-1]:
-            if not isinstance(parent, dict) or part not in parent:
-                return None
-            parent = parent[part]
-        return parent if isinstance(parent, dict) else None
-
-    def _set_at_path(self, path: tuple[str, ...], new_value: Any) -> bool:
-        """Записывает значение по пути, сохраняя ES3-обёртки {__type, value}."""
-        parent = self._resolve_parent(path)
-        if parent is None:
-            return False
-
-        key = path[-1]
-        current = parent.get(key)
-        if isinstance(current, dict) and "__type" in current and "value" in current:
-            current["value"] = new_value
-        else:
-            parent[key] = new_value
-        return True
-    def get_field(self, logical_name: str, default: Any = None) -> Any:
-        aliases = FIELD_ALIASES.get(logical_name, (logical_name,))
-        _, value = self.find_first(*aliases)
-        return default if value is None else value
-
-    def set_field(self, logical_name: str, new_value: Any) -> bool:
-        aliases = FIELD_ALIASES.get(logical_name, (logical_name,))
-        path, _ = self.find_first(*aliases)
-        if path is None:
-            # Создаём на верхнем уровне под каноническим именем
-            canonical = aliases[0]
-            # Предпочитаем писать внутрь Progression.value, если контейнер есть
-            prog = self.data.get("Progression")
-            if isinstance(prog, dict):
-                target = prog.get("value", prog) if "__type" in prog else prog
-                if isinstance(target, dict):
-                    if (
-                        canonical in target
-                        and isinstance(target[canonical], dict)
-                        and "__type" in target[canonical]
-                    ):
-                        target[canonical]["value"] = new_value
-                    else:
-                        target[canonical] = new_value
-                    return True
-            self.data[canonical] = new_value
-            return True
-        return self._set_at_path(path, new_value)
-
-    def _find_game_version(self, data: dict[str, Any]) -> str | None:
-        for path, value in self._walk(data):
-            if path and path[-1] in ("Version", "GameVersion", "SaveVersion"):
-                if isinstance(value, dict) and "value" in value:
-                    value = value["value"]
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
+        ver = data.get("VersionSave")
+        if isinstance(ver, str):
+            try:
+                parsed = json.loads(ver)
+                return str(parsed)
+            except json.JSONDecodeError:
+                return ver.strip('"') or None
         return None
 
     def get_snapshot(self) -> SaveSnapshot:
-        licenses_raw = self.get_field("licenses", [BASIC_LICENSE_ID])
-        licenses: list[int] = []
-        if isinstance(licenses_raw, list):
-            for item in licenses_raw:
-                try:
-                    licenses.append(int(item))
-                except (TypeError, ValueError):
-                    continue
-        if not licenses:
-            licenses = [BASIC_LICENSE_ID]
-
-        def as_int(val: Any) -> int | None:
-            if val is None:
-                return None
+        skills_raw = self.player.get("skills") or {}
+        skills: dict[str, float] = {}
+        for key in SKILL_KEYS:
             try:
-                return int(val)
+                skills[key] = float(skills_raw.get(key, 1))
             except (TypeError, ValueError):
-                return None
+                skills[key] = 1.0
 
-        def as_float(val: Any) -> float:
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return 0.0
+        exploits = self.player.get("exploits") or []
+        if not isinstance(exploits, list):
+            exploits = []
+        exploits = [str(x) for x in exploits]
 
-        store_name = self.get_field("store_name", "")
-        if not isinstance(store_name, str):
-            store_name = str(store_name) if store_name is not None else ""
+        factions = self.player.get("factions") or []
+        if not isinstance(factions, list):
+            factions = []
+        factions = [str(x) for x in factions]
+
+        try:
+            money = float(self.player.get("money", 0) or 0)
+        except (TypeError, ValueError):
+            money = 0.0
+        try:
+            bit_node = int(self.player.get("bitNodeN", 1) or 1)
+        except (TypeError, ValueError):
+            bit_node = 1
+        try:
+            karma = float(self.player.get("karma", 0) or 0)
+        except (TypeError, ValueError):
+            karma = 0.0
+        try:
+            playtime = float(self.player.get("totalPlaytime", 0) or 0)
+        except (TypeError, ValueError):
+            playtime = 0.0
 
         return SaveSnapshot(
-            money=as_float(self.get_field("money", 0)),
-            store_name=store_name,
-            day=as_int(self.get_field("day", 1)) or 1,
-            licenses=licenses,
-            checkout_count=as_int(self.get_field("checkout_count")),
-            shelf_count=as_int(self.get_field("shelf_count")),
-            employee_count=as_int(self.get_field("employee_count")),
-            completed_checkouts=as_int(self.get_field("completed_checkouts")),
-            store_level=as_int(self.get_field("store_level")),
-            store_upgrade=as_int(self.get_field("store_upgrade")),
+            money=money,
+            skills=skills,
+            bit_node=bit_node,
+            karma=karma,
+            exploits=exploits,
+            factions=factions,
+            playtime_ms=playtime,
+            hacking_level=skills.get("hacking", 1.0),
         )
 
     def apply_snapshot(self, snap: SaveSnapshot) -> None:
-        self.set_field("money", float(snap.money))
-        if snap.store_name:
-            self.set_field("store_name", snap.store_name)
-        self.set_field("day", int(snap.day))
-        self.set_field("licenses", [int(x) for x in snap.licenses])
-        if snap.checkout_count is not None:
-            self.set_field("checkout_count", int(snap.checkout_count))
-        if snap.shelf_count is not None:
-            self.set_field("shelf_count", int(snap.shelf_count))
-        if snap.employee_count is not None:
-            self.set_field("employee_count", int(snap.employee_count))
-        if snap.completed_checkouts is not None:
-            self.set_field("completed_checkouts", int(snap.completed_checkouts))
-        if snap.store_level is not None:
-            self.set_field("store_level", int(snap.store_level))
-        if snap.store_upgrade is not None:
-            self.set_field("store_upgrade", int(snap.store_upgrade))
+        self.player["money"] = float(snap.money)
+        skills = self.player.get("skills")
+        if not isinstance(skills, dict):
+            skills = {}
+            self.player["skills"] = skills
+        for key, value in snap.skills.items():
+            skills[key] = float(value)
+        self.player["bitNodeN"] = int(snap.bit_node)
+        self.player["karma"] = float(snap.karma)
+        self.player["exploits"] = list(snap.exploits)
 
-    def set_all_licenses(self) -> None:
-        self.set_field("licenses", list(ALL_LICENSE_IDS))
+    def set_money(self, value: float) -> None:
+        self.player["money"] = float(value)
 
-    def reset_licenses(self) -> None:
-        self.set_field("licenses", [BASIC_LICENSE_ID])
+    def set_skill(self, key: str, value: float) -> None:
+        skills = self.player.setdefault("skills", {})
+        if not isinstance(skills, dict):
+            self.player["skills"] = {}
+            skills = self.player["skills"]
+        skills[key] = float(value)
+
+    def set_all_skills(self, value: float) -> None:
+        for key in SKILL_KEYS:
+            self.set_skill(key, value)
+
+    def set_bitnode(self, value: int) -> None:
+        self.player["bitNodeN"] = int(value)
+
+    def add_edit_exploit(self) -> None:
+        exploits = self.player.get("exploits")
+        if not isinstance(exploits, list):
+            exploits = []
+            self.player["exploits"] = exploits
+        if EXPLOIT_EDIT_SAVE not in exploits:
+            exploits.append(EXPLOIT_EDIT_SAVE)
+
+    def _sync_player_into_root(self) -> None:
+        envelope = getattr(self, "_player_envelope", None)
+        if not isinstance(envelope, dict):
+            envelope = self.wrap_player(self.player)
+            self._player_envelope = envelope
+        else:
+            if "ctor" in envelope and "data" in envelope:
+                envelope["data"] = self.player
+            else:
+                envelope = self.wrap_player(self.player)
+                self._player_envelope = envelope
+
+        data = self.unwrap(self.root)
+        if not isinstance(data, dict):
+            raise ValueError(MESSAGES["file_corrupt"])
+        data["PlayerSave"] = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+
+        # Если корень был в формате ctor/data — data уже ссылка внутрь root
+        if "ctor" in self.root and "data" in self.root:
+            self.root["data"] = data
+        else:
+            self.root = data
 
     def to_pretty_json(self) -> str:
-        return json.dumps(self.data, indent=2, ensure_ascii=False)
+        self._sync_player_into_root()
+        return json.dumps(self.root, indent=2, ensure_ascii=False)
 
     def apply_raw_json(self, text: str) -> None:
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
             raise ValueError(MESSAGES["json_invalid"])
-        self.data = parsed
-        self.meta.format_kind = self._detect_format(text, parsed)
-        self.meta.game_version = self._find_game_version(parsed)
+        player_data, envelope = self._extract_player(parsed)
+        if "ctor" not in envelope:
+            envelope = self.wrap_player(player_data)
+        else:
+            envelope["data"] = player_data
+        self.root = parsed
+        self.player = player_data
+        self._player_envelope = envelope
+        self.meta.game_version = self._read_version(parsed)
 
     def dump_bytes(self) -> bytes:
-        if self.meta.format_kind == "es3_typed":
-            # Сохраняем компактно, как типичные ES3, но с отступами для читаемости
-            text = json.dumps(self.data, indent=2, ensure_ascii=False)
-        else:
-            text = json.dumps(self.data, indent=2, ensure_ascii=False)
-        return text.encode("utf-8")
+        self._sync_player_into_root()
+        # Компактный JSON как у игры (без лишних пробелов в PlayerSave уже)
+        text = json.dumps(self.root, ensure_ascii=False, separators=(",", ":"))
+        # Для ctor-формата encodeJsonSaveString требует старт с {"ctor":"BitburnerSaveObject"
+        if not text.startswith('{"ctor":"BitburnerSaveObject"'):
+            # Оборачиваем, если пользователь открыл «голый» объект data
+            if "PlayerSave" in self.root:
+                wrapped = {"ctor": "BitburnerSaveObject", "data": self.root}
+                text = json.dumps(wrapped, ensure_ascii=False, separators=(",", ":"))
+                self.root = wrapped
+        return self._encode_bytes(text, self.meta.format_kind or "base64")
 
     def save(self, path: Path | None = None) -> Path:
         dest = Path(path) if path else self.path
@@ -464,29 +363,32 @@ class SaveHandler:
         self.meta.path = dest
         self.meta.size = dest.stat().st_size
         self.meta.modified = datetime.fromtimestamp(dest.stat().st_mtime)
-        self._original_data = deepcopy(self.data)
-        logger.info("Сохранение записано: %s", dest)
+        self._original_root = deepcopy(self.root)
+        self._original_player = deepcopy(self.player)
+        logger.info("Bitburner сейв записан: %s", dest)
         return dest
 
     def reset_to_loaded(self) -> None:
-        self.data = deepcopy(self._original_data)
+        self.root = deepcopy(self._original_root)
+        self.player = deepcopy(self._original_player)
+        _, envelope = self._extract_player(self.root)
+        if "ctor" not in envelope:
+            envelope = self.wrap_player(self.player)
+        else:
+            envelope["data"] = self.player
+        self._player_envelope = envelope
 
     @staticmethod
     def is_game_running() -> bool:
         try:
             import psutil
         except ImportError:
-            logger.warning("psutil не установлен — проверка процесса игры пропущена")
             return False
-
-        names_lower = {n.lower() for n in GAME_PROCESS_NAMES}
+        names = {n.lower() for n in GAME_PROCESS_NAMES}
         for proc in psutil.process_iter(["name"]):
             try:
                 name = (proc.info.get("name") or "").lower()
-                if name in names_lower:
-                    return True
-                # Частичное совпадение для Wine/Steam
-                if "supermarket" in name and "simulator" in name:
+                if name in names or "bitburner" in name:
                     return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue

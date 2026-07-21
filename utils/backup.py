@@ -1,4 +1,4 @@
-"""Менеджер резервных копий сохранений."""
+"""Менеджер резервных копий."""
 
 from __future__ import annotations
 
@@ -26,9 +26,15 @@ class BackupInfo:
         return self.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
 
-class BackupManager:
-    """Создаёт и восстанавливает бэкапы рядом с файлом сохранения."""
+def _stem_and_suffix(path: Path) -> tuple[str, str]:
+    """Учитывает двойные расширения вроде .json.gz."""
+    name = path.name
+    if name.endswith(".json.gz"):
+        return name[: -len(".json.gz")], ".json.gz"
+    return path.stem, path.suffix
 
+
+class BackupManager:
     def __init__(self, save_path: Path | None = None) -> None:
         self.save_path = Path(save_path) if save_path else None
 
@@ -49,11 +55,12 @@ class BackupManager:
         backup_root = src.parent / "backups"
         backup_root.mkdir(parents=True, exist_ok=True)
 
+        stem, suffix = _stem_and_suffix(src)
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        dest = backup_root / f"{src.stem}_backup_{stamp}{src.suffix}"
+        dest = backup_root / f"{stem}_backup_{stamp}{suffix}"
         counter = 1
         while dest.exists():
-            dest = backup_root / f"{src.stem}_backup_{stamp}_{counter}{src.suffix}"
+            dest = backup_root / f"{stem}_backup_{stamp}_{counter}{suffix}"
             counter += 1
 
         shutil.copy2(src, dest)
@@ -72,8 +79,9 @@ class BackupManager:
         if backup_root is None or not backup_root.exists():
             return []
 
+        stem, _suffix = _stem_and_suffix(self.save_path)
         files = sorted(
-            backup_root.glob(f"{self.save_path.stem}_backup_*.es3"),
+            [p for p in backup_root.iterdir() if p.is_file() and f"{stem}_backup_" in p.name],
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )

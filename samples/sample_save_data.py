@@ -1,44 +1,71 @@
-"""
-Пример сохранения Supermarket Simulator (упрощённый, но с реальной ES3-структурой).
+"""Минимальный валидный экспорт Bitburner для тестов."""
 
-Ключевые поля игры:
-- Progression.value.Money
-- Progression.value.CurrentDay
-- Progression.value.UnlockedLicenses (ID 21–47)
-- Progression.value.CurrentStoreLevel / CompletedCheckoutCount
-"""
+from __future__ import annotations
 
-SAMPLE_SAVE = {
-    "Storage": {
-        "__type": "SaveManager+StorageData,Assembly-CSharp",
-        "value": {"Purchased": True, "StorageLevel": 1},
-    },
-    "Employees": {
-        "__type": "SaveManager+EmployeesData,Assembly-CSharp",
-        "value": {"CashiersData": [], "RestockersData": []},
-    },
-    "Progression": {
-        "__type": "SaveManager+ProgressionContainer,Assembly-CSharp",
-        "value": {
-            "UnlockedLicenses": [21, 22],
-            "Money": 15420.5,
-            "CurrentDay": 7,
-            "CompletedCheckoutCount": 42,
-            "CurrentStoreLevel": 2,
-            "StoreUpgradeLevel": 1,
-            "StoreName": "Мой Маркет",
-            "CheckoutCount": 2,
-            "ShelfCount": 12,
-            "EmployeeCount": 1,
-            "Version": "0.9.0-sample",
+import base64
+import gzip
+import json
+from pathlib import Path
+
+PLAYER = {
+    "ctor": "PlayerObject",
+    "data": {
+        "money": 150000.0,
+        "skills": {
+            "hacking": 42,
+            "strength": 10,
+            "defense": 10,
+            "dexterity": 10,
+            "agility": 10,
+            "charisma": 5,
+            "intelligence": 1,
         },
-    },
-    "Quality": {
-        "__type": "SaveManager+SettingsContainer,Assembly-CSharp",
-        "value": {
-            "QualitySetting": 2,
-            "LanguageSetting": 9,
-            "FullScreen": True,
-        },
+        "bitNodeN": 1,
+        "karma": -10.5,
+        "exploits": [],
+        "factions": ["CyberSec"],
+        "totalPlaytime": 3_600_000,
+        "augmentations": [],
+        "achievements": [],
+        "sourceFiles": [],
+        "identifier": "test-player",
+        "lastSave": 0,
     },
 }
+
+ROOT = {
+    "ctor": "BitburnerSaveObject",
+    "data": {
+        "PlayerSave": json.dumps(PLAYER, separators=(",", ":")),
+        "AllServersSave": "{}",
+        "CompaniesSave": "{}",
+        "FactionsSave": "{}",
+        "AliasesSave": "{}",
+        "GlobalAliasesSave": "{}",
+        "StockMarketSave": "",
+        "StaneksGiftSave": "",
+        "SettingsSave": "{}",
+        "VersionSave": json.dumps("2.6.1"),
+        "LastExportBonus": "0",
+        "GoSave": "{}",
+        "DarknetSave": "{}",
+        "InfiltrationsSave": "{}",
+    },
+}
+
+
+def write_samples(out_dir: Path) -> tuple[Path, Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_text = json.dumps(ROOT, separators=(",", ":"))
+
+    b64_path = out_dir / "bitburnerSave_sample_BN1x1.json"
+    b64_path.write_bytes(base64.b64encode(json_text.encode("utf-8")))
+
+    gz_path = out_dir / "bitburnerSave_sample_BN1x1.json.gz"
+    gz_path.write_bytes(gzip.compress(json_text.encode("utf-8")))
+    return b64_path, gz_path
+
+
+if __name__ == "__main__":
+    write_samples(Path(__file__).resolve().parent)
+    print("samples written")

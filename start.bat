@@ -1,24 +1,23 @@
 @echo off
-REM ASCII-only launcher for Windows cmd.exe (no Cyrillic — avoids parse errors)
-title Supermarket Simulator Save Editor
+REM Bitburner Save Editor launcher (ASCII-only for Windows cmd)
+title Bitburner Save Editor
 cd /d "%~dp0"
 
 echo ============================================
-echo   SUPERMARKET SIMULATOR - SAVE EDITOR
+echo   BITBURNER - SAVE EDITOR
 echo ============================================
 echo.
-echo IMPORTANT: close the game BEFORE saving!
+echo 1) In Bitburner: Options - Export save
+echo 2) Open that file here, edit, Save
+echo 3) In Bitburner: Options - Import save
 echo.
 echo.
 
 where python >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python not found.
-    echo.
-    echo 1. Download Python 3.11+ from https://www.python.org/downloads/
-    echo 2. Check the box: Add python.exe to PATH
-    echo 3. Run this file again.
-    echo.
+    echo Download Python 3.11+ from https://www.python.org/downloads/
+    echo Check: Add python.exe to PATH
     pause
     exit /b 1
 )
@@ -34,12 +33,11 @@ if not exist ".venv\Scripts\python.exe" (
     )
 )
 
-echo [2/3] Installing libraries (first run may take a minute)...
+echo [2/3] Installing libraries...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
     echo [ERROR] Failed to install requirements.txt
-    echo Check your internet connection and try again.
     pause
     exit /b 1
 )
@@ -51,7 +49,7 @@ set EXITCODE=%ERRORLEVEL%
 if not "%EXITCODE%"=="0" (
     echo.
     echo [ERROR] Editor exited with code %EXITCODE%
-    echo See editor.log in this folder.
+    echo See editor.log
     pause
     exit /b %EXITCODE%
 )
