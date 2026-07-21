@@ -354,18 +354,54 @@ class SaveHandler:
                 self.root = wrapped
         return self._encode_bytes(text, self.meta.format_kind or "base64")
 
+    def suggested_edited_path(self) -> Path | None:
+        """Путь для сохранения правок без перезаписи исходного экспорта."""
+        if not self.path:
+            return None
+        name = self.path.name
+        if name.endswith(".json.gz"):
+            base = name[: -len(".json.gz")]
+            suffix = ".json.gz"
+        else:
+            base = self.path.stem
+            suffix = self.path.suffix
+        if base.endswith("_EDITED"):
+            return self.path
+        return self.path.with_name(f"{base}_EDITED{suffix}")
+
+    def verify_money_on_disk(self, path: Path | None = None) -> float:
+        """Перечитывает файл с диска и возвращает money (для проверки записи)."""
+        target = Path(path) if path else self.path
+        if target is None:
+            raise FileNotFoundError(MESSAGES["no_file"])
+        checker = SaveHandler()
+        checker.load(target)
+        return float(checker.get_snapshot().money)
+
     def save(self, path: Path | None = None) -> Path:
         dest = Path(path) if path else self.path
         if dest is None:
             raise FileNotFoundError(MESSAGES["no_file"])
-        dest.write_bytes(self.dump_bytes())
+        payload = self.dump_bytes()
+        dest.write_bytes(payload)
+        # Проверка: файл реально читается и money на месте
+        expected = float(self.player.get("money", 0) or 0)
+        checker = SaveHandler()
+        checker.load(dest)
+        actual = float(checker.get_snapshot().money)
+        if abs(actual - expected) > max(1.0, abs(expected) * 1e-9):
+            raise ValueError(
+                f"Файл записан, но money не совпало (ждали {expected:g}, в файле {actual:g})."
+            )
+
         self.path = dest
         self.meta.path = dest
         self.meta.size = dest.stat().st_size
         self.meta.modified = datetime.fromtimestamp(dest.stat().st_mtime)
+        self.meta.format_kind = checker.meta.format_kind
         self._original_root = deepcopy(self.root)
         self._original_player = deepcopy(self.player)
-        logger.info("Bitburner сейв записан: %s", dest)
+        logger.info("Bitburner сейв записан: %s (money=%g)", dest, actual)
         return dest
 
     def reset_to_loaded(self) -> None:

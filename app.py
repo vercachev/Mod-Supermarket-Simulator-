@@ -144,10 +144,17 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self.save_changes,
         ).pack(side="left", padx=4)
-        ctk.CTkButton(bottom, text="🔄 Сбросить", width=140, height=36, command=self.reset_changes).pack(
+        ctk.CTkButton(
+            bottom,
+            text="💾 Сохранить как…",
+            width=160,
+            height=36,
+            command=self.save_as,
+        ).pack(side="left", padx=4)
+        ctk.CTkButton(bottom, text="🔄 Сбросить", width=120, height=36, command=self.reset_changes).pack(
             side="left", padx=4
         )
-        ctk.CTkButton(bottom, text="📋 Бэкап", width=120, height=36, command=self.create_backup_manual).pack(
+        ctk.CTkButton(bottom, text="📋 Бэкап", width=100, height=36, command=self.create_backup_manual).pack(
             side="left", padx=4
         )
 
