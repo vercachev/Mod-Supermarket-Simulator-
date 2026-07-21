@@ -222,10 +222,16 @@ class App(ctk.CTk):
             self.set_status(MESSAGES["not_loaded"], STATUS_ERROR)
             return
         except ValueError as exc:
-            # Предложить открыть как raw
+            msg = str(exc)
+            # Xbox/зашифрованные — не предлагаем «сырой текст», чтобы не испортить сейв
+            if "Xbox" in msg or "Game Pass" in msg or "wgs" in msg.lower():
+                messagebox.showerror(APP_NAME, msg)
+                self.set_status("● Xbox-сейв зашифрован — откройте Steam .es3", STATUS_ERROR)
+                return
             if messagebox.askyesno(
                 APP_NAME,
-                f"{exc}\n\nОткрыть файл как сырой текст в редакторе JSON?",
+                f"{exc}\n\nОткрыть файл как сырой текст в редакторе JSON?\n"
+                "⚠️ Не сохраняйте, если это не читаемый JSON.",
             ):
                 try:
                     text = Path(path).read_text(encoding="utf-8", errors="replace")

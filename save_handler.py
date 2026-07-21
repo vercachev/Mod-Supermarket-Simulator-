@@ -203,31 +203,59 @@ class SaveHandler:
             return None
         return self._try_load_json(match.group(0))
 
+    def _extract_json_from_bytes(self, raw: bytes) -> tuple[dict[str, Any] | None, str]:
+        """Пробует UTF-8 и поиск JSON внутри бинарной обёртки."""
+        for encoding in ("utf-8-sig", "utf-8", "utf-16-le", "latin-1"):
+            try:
+                text = raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            data = self._try_load_json(text.strip())
+            if data is not None:
+                return data, text
+            data = self._extract_json_via_regex(text)
+            if data is not None:
+                return data, text
+
+        # Бинарный контейнер: ищем маркер JSON с ключевыми полями игры
+        for marker in (b'"Money"', b'"Progression"', b'"UnlockedLicenses"', b'"CurrentDay"'):
+            idx = raw.find(marker)
+            if idx < 0:
+                continue
+            start = raw.rfind(b"{", 0, idx)
+            if start < 0:
+                continue
+            chunk = raw[start:]
+            # Обрезаем по последней закрывающей скобке
+            end = chunk.rfind(b"}")
+            if end < 0:
+                continue
+            chunk = chunk[: end + 1]
+            try:
+                text = chunk.decode("utf-8", errors="ignore")
+            except Exception:  # noqa: BLE001
+                continue
+            data = self._try_load_json(text) or self._extract_json_via_regex(text)
+            if data is not None:
+                return data, text
+        return None, ""
+
+    @staticmethod
+    def _is_xbox_wgs_path(path: Path) -> bool:
+        parts = [p.lower() for p in path.parts]
+        return "packages" in parts and "wgs" in parts
+
     def load(self, path: Path | str) -> None:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(MESSAGES["file_not_found"])
 
-        # Бинарные/зашифрованные файлы — не текст
         raw_bytes = path.read_bytes()
-        try:
-            text = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            try:
-                text = raw_bytes.decode("utf-8-sig")
-            except UnicodeDecodeError as exc:
-                raise ValueError(MESSAGES["file_corrupt"]) from exc
+        data, text = self._extract_json_from_bytes(raw_bytes)
 
-        if "\x00" in text[:200] or not text.strip().startswith(("{", "[", '"')):
-            # Может быть валидный JSON с BOM/пробелами
-            stripped = text.lstrip("\ufeff \t\r\n")
-            if not stripped.startswith(("{", "[")):
-                raise ValueError(MESSAGES["file_corrupt"])
-
-        data = self._try_load_json(text)
         if data is None:
-            data = self._extract_json_via_regex(text)
-        if data is None:
+            if self._is_xbox_wgs_path(path):
+                raise ValueError(MESSAGES["file_xbox_encrypted"])
             raise ValueError(MESSAGES["file_corrupt"])
 
         self.path = path
