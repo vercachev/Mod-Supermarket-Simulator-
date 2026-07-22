@@ -1,4 +1,4 @@
-"""Менеджер бэкапов (рядом с исходным файлом)."""
+"""Менеджер бэкапов (в папке backups рядом с сейвом игры)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from utils.paths import game_save_root, is_under_backups
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +39,16 @@ class BackupManager:
         src = Path(source) if source else self.save_path
         if src is None or not src.exists():
             raise FileNotFoundError("Нет файла для бэкапа")
-        backup_root = src.parent / "backups"
+        if is_under_backups(src):
+            raise ValueError("Нельзя делать бэкап из папки backups — откройте StoreFileN.es3")
+
+        root = game_save_root(src)
+        backup_root = root / "backups"
         backup_root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         dest = backup_root / f"{src.stem}_backup_{stamp}{src.suffix}"
         shutil.copy2(src, dest)
+        logger.info("Бэкап: %s → %s", src, dest)
         return BackupInfo(
             path=dest,
             created_at=datetime.fromtimestamp(dest.stat().st_mtime),
