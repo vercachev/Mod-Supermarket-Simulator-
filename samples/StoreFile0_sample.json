@@ -1,0 +1,34 @@
+{
+    "Difficulty": {
+        "__type": "int",
+        "value": 0
+    },
+    "StoreName": {
+        "__type": "string",
+        "value": "TestMart"
+    },
+    "Day": {
+        "__type": "int",
+        "value": 1
+    },
+    "FranchiseExperience": {
+        "__type": "int",
+        "value": 100
+    },
+    "FranchisePoints": {
+        "__type": "int",
+        "value": 5
+    },
+    "Funds": {
+        "__type": "float",
+        "value": 12345.0
+    },
+    "LastAwardedLevel": {
+        "__type": "int",
+        "value": 1
+    },
+    "SupermarketName": {
+        "__type": "string",
+        "value": "TESTMART"
+    }
+}

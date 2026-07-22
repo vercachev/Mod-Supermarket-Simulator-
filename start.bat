@@ -1,14 +1,14 @@
 @echo off
-title Cookie Clicker Save Editor
+title Supermarket Together Save Editor
 cd /d "%~dp0"
 
 echo ============================================
-echo   COOKIE CLICKER - SAVE EDITOR
+echo   SUPERMARKET TOGETHER - SAVE EDITOR
 echo ============================================
 echo.
-echo 1) Game: Options - Export save
-echo 2) Edit cookies here - Save
-echo 3) Game: Options - Import save
+echo 1) Close the game
+echo 2) Open StoreFile0.es3 - set Funds - Save
+echo 3) Replace save / use "overwrite" button
 echo.
 
 where python >nul 2>&1

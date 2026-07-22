@@ -1,4 +1,4 @@
-"""Точка входа Cookie Clicker Save Editor."""
+"""Точка входа Supermarket Together Save Editor."""
 
 from __future__ import annotations
 
