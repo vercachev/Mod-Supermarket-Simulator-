@@ -1,2 +1,4 @@
 @echo off
-call "%~dp0start.bat"
+title Supermarket Together Save Editor
+cd /d "%~dp0"
+call start.bat
