@@ -1,3 +1,4 @@
-# Ignore build outputs for awake DLC
-awake-dlc/AwakeDLC/bin/
-awake-dlc/AwakeDLC/obj/
+AwakeDLC/bin/
+AwakeDLC/obj/
+*.user
+*.suo
