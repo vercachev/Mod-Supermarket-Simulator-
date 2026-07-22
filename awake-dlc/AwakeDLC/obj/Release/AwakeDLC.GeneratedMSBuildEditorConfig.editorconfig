@@ -1,0 +1,5 @@
+is_global = true
+build_property.RootNamespace = AwakeDLC
+build_property.ProjectDir = /workspace/awake-dlc/AwakeDLC/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 

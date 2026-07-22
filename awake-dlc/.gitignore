@@ -1,0 +1,3 @@
+# Ignore build outputs for awake DLC
+awake-dlc/AwakeDLC/bin/
+awake-dlc/AwakeDLC/obj/

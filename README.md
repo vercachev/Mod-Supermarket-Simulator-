@@ -1,3 +1,14 @@
+# Mod tools
+
+В репозитории два проекта:
+
+| Папка | Что это |
+|--|--|
+| корень (`main.py`) | Редактор сейвов **Supermarket Together** |
+| [`awake-dlc/`](awake-dlc/) | **awake DLC** — меню читов для **GTA IV** (оверлей) |
+
+---
+
 # Supermarket Together — Save Editor v1.1
 
 Простой редактор сейвов **Supermarket Together**.  
